@@ -244,9 +244,9 @@ string startXML(int x1, int y1, int x2, int y2, int flip) {
 	sprintf(line, "<svg width=\"%fmm\" height=\"%fmm\" viewBox=\"0 0 %f %f\" xmlns=\"http://www.w3.org/2000/svg\">\n", w, h, w, h);
 	xml += line;
 	if (flip) {
-		sprintf(line, "<g transform=\"translate(%f %f)\">", w - GRID * ( 3 + X1 - x1) * MAGNIFY, h - GRID * 3  * MAGNIFY);
+		sprintf(line, "<g transform=\"translate(%f %f)\">", w - GRID * ( 3 + X1 - x1) * MAGNIFY, h - GRID * ( 3 - y1 + Y1)  * MAGNIFY);
 	} else {
-		sprintf(line, "<g transform=\"translate(%f %f)\">", GRID * ( 3 + X1 - x1 ) * MAGNIFY, h - GRID * 3  * MAGNIFY);
+		sprintf(line, "<g transform=\"translate(%f %f)\">", GRID * ( 3 + X1 - x1 ) * MAGNIFY, h - GRID * (3 - y1 + Y1)  * MAGNIFY);
 	}
 	xml += line;
 	return xml;
