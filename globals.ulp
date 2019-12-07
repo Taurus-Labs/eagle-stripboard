@@ -1,0 +1,20 @@
+int X1, Y1, X2, Y2;  // routing area
+int bX1, bX2, bY1, bY2; // board area
+
+int holesX, holesY;
+string holeNets[];
+string vias[];
+int numVias = 0;
+string toppads[];
+int numTopPads = 0;
+string botpads[];
+int numBotPads = 0;
+
+string directory;
+int onHoles = 1;
+
+string views[];
+int nViews = 0;
+int activeView = 0;
+
+

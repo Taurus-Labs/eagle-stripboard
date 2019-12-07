@@ -1,0 +1,189 @@
+#include "globals.ulp"
+#include "constants.ulp"
+
+
+string layersList(string line) {
+	string parts[];
+	string layers[];
+	int i = 0, j;
+	strsplit(parts, line, '\t');
+	for (j = V_CUTS; j < V_LAST; j++) {
+		if (parts[j]) layers[i++] = layerNames[j];
+	}
+	string ret;
+	for (j = 0; j < i; j++) {
+		ret = ret + layers[j] + "<br>";
+	}
+	return ret;
+}
+
+
+string editView(string def) {
+	string parts[];
+	int nParts = strsplit(parts, def, '\t');
+	int bottom = parts[V_BOTTOM] != "";
+	string topbottom[] = {"Top", "Bottom"};
+	int bools[];
+	for (int i = 0; i < nParts; i++) {
+		bools[i] = parts[i] != "";
+	}
+	int result = dlgDialog("Edit view") {
+		dlgHBoxLayout {
+			dlgVBoxLayout {
+				dlgLabel("View name");
+				dlgStringEdit(parts[V_NAME]);
+				dlgLabel("View from");
+				dlgComboBox(topbottom, bottom) {
+					parts[V_BOTTOM] = (bottom ? "1" : "");
+				}
+				dlgStretch(1);
+			}
+			dlgGroup("Layers") {
+				dlgCheckBox(layerNames[V_CUTS], bools[V_CUTS]) {parts[V_CUTS] = (bools[V_CUTS] ? "1" : "");}
+				dlgCheckBox(layerNames[V_WIRES], bools[V_WIRES]) {parts[V_WIRES] = (bools[V_WIRES] ? "1" : "");}
+				dlgCheckBox(layerNames[V_TCOMP], bools[V_TCOMP]) {parts[V_TCOMP] = (bools[V_TCOMP] ? "1" : "");}
+				dlgCheckBox(layerNames[V_BCOMP], bools[V_BCOMP]) {parts[V_BCOMP] = (bools[V_BCOMP] ? "1" : "");}
+				dlgCheckBox(layerNames[V_TNAMES], bools[V_TNAMES]) {parts[V_TNAMES] = (bools[V_TNAMES] ? "1" : "");}
+				dlgCheckBox(layerNames[V_TVALUES], bools[V_TVALUES]) {parts[V_TVALUES] = (bools[V_TVALUES] ? "1" : "");}
+				dlgCheckBox(layerNames[V_BNAMES], bools[V_BNAMES]) {parts[V_BNAMES] = (bools[V_BNAMES] ? "1" : "");}
+				dlgCheckBox(layerNames[V_BVALUES], bools[V_BVALUES]) {parts[V_BVALUES] = (bools[V_BVALUES] ? "1" : "");}
+				dlgCheckBox(layerNames[V_TGRAPH], bools[V_TGRAPH]) {parts[V_TGRAPH] = (bools[V_TGRAPH] ? "1" : "");}
+				dlgCheckBox(layerNames[V_BGRAPH], bools[V_BGRAPH]) {parts[V_BGRAPH] = (bools[V_BGRAPH] ? "1" : "");}
+				dlgCheckBox(layerNames[V_TTEXT], bools[V_TTEXT]) {parts[V_TTEXT] = (bools[V_TTEXT] ? "1" : "");}
+				dlgCheckBox(layerNames[V_BTEXT], bools[V_BTEXT]) {parts[V_BTEXT] = (bools[V_BTEXT] ? "1" : "");}
+				dlgStretch(1);
+			}
+		}
+			dlgHBoxLayout {
+				dlgPushButton("OK") {
+					if (parts[V_NAME] == "") {
+						dlgMessageBox(":Name cannot be empty", "Cancel");
+					} else {
+						int sum = 0;
+						for (int i = V_CUTS; i < V_LAST; i++) {
+							if (parts[i] != "") sum++;
+						}
+						if (sum == 0) {
+							dlgMessageBox(":Select at least one layer", "Cancel");
+						} else {
+							dlgAccept(1);
+						}
+					}
+				}
+				dlgPushButton("Cancel") dlgReject();
+			}
+	};
+	if (result == 1) {
+		def = strjoin(parts, '\t');
+	}
+	return def;
+}
+
+int mainWindow() {
+	string nameLabel;
+	string viewLabel;
+	string layersLabel;
+	int sorting = 3;
+	return dlgDialog("Stripboard") {
+		dlgVBoxLayout {
+			dlgHBoxLayout {
+				dlgLabel("Output Directory");
+				dlgStringEdit(directory);
+				dlgPushButton("Browse") {
+					string dir = dlgDirectory("Select Output Directory", directory);
+					if (dir != "") {
+						directory = dir;
+					}
+				}
+			}
+			dlgGroup("Views") {
+				dlgHBoxLayout {
+					dlgVBoxLayout {
+						dlgListView("Name", views, activeView, sorting) {
+							if (dlgSelectionChanged()) {
+								string line[];
+								strsplit(line, views[activeView], '\t');
+								nameLabel = "<b>View name</b> " + line[V_NAME];
+								viewLabel = "<b>View from</b> " + (line[V_BOTTOM] ? "Bottom" : "Top");
+								layersLabel = "<b>Layers</b><br>" + layersList(views[activeView]);
+							}
+						}
+						dlgHBoxLayout {
+							dlgPushButton("Add view") {
+								string def;
+								def = editView(def);
+								if (def != "") {
+									views[nViews++] = def;
+									activeView = nViews - 1;
+									string line[];
+									strsplit(line, views[activeView], '\t');
+									nameLabel = "<b>View name</b> " + line[V_NAME];
+									viewLabel = "<b>View from</b> " + (line[V_BOTTOM] ? "Bottom" : "Top");
+									layersLabel = "<b>Layers</b><br>" + layersList(views[activeView]);
+								}
+							}
+							dlgPushButton("Edit view") {
+								views[activeView] = editView(views[activeView]);
+								string line[];
+								strsplit(line, views[activeView], '\t');
+								nameLabel = "<b>View name</b> " + line[V_NAME];
+								viewLabel = "<b>View from</b> " + (line[V_BOTTOM] ? "Bottom" : "Top");
+								layersLabel = "<b>Layers</b><br>" + layersList(views[activeView]);
+							}
+							dlgPushButton("Delete view") {
+								if (nViews < 2) {
+									dlgMessageBox(":Cannot delete the last view", "Cancel");
+								} else {
+									for (int i = activeView; i < nViews - 1; i++) {
+										views[i] = views[i+1];
+									}
+									nViews--;
+									views[nViews] = "";
+									if (activeView >= nViews) activeView = nViews - 1;
+									string line[];
+									strsplit(line, views[activeView], '\t');
+									nameLabel = "<b>View name</b> " + line[V_NAME];
+									viewLabel = "<b>View from</b> " + (line[V_BOTTOM] ? "Bottom" : "Top");
+									layersLabel = "<b>Layers</b><br>" + layersList(views[activeView]);
+								}
+							}
+						}
+					}
+					dlgVBoxLayout {
+						dlgSpacing(300);
+					}
+					dlgVBoxLayout {
+						dlgHBoxLayout {
+							dlgLabel(nameLabel, 1);
+						}
+						dlgHBoxLayout {
+							dlgLabel(viewLabel, 1);
+						}
+						dlgHBoxLayout {
+							dlgLabel(layersLabel, 1);
+						}
+						dlgHBoxLayout {
+							dlgSpacing(300);
+						}
+						dlgStretch(1);
+					}
+				}
+			}
+			dlgHBoxLayout {
+				dlgComboBox(methods, onHoles);
+				dlgStretch(1);
+				dlgPushButton("Generate and close") {
+					dlgAccept(GENERATE_CLOSE);
+				}
+				dlgPushButton("Generate and repeat") {
+					dlgAccept(GENERATE);
+				}
+				dlgPushButton("Cancel") {
+					dlgReject();
+				}
+			}
+		}
+	};
+}
+
+

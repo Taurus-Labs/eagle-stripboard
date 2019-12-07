@@ -1,0 +1,62 @@
+// layers
+
+enum {
+	BOTTOM = 16,
+	TOP = 1,
+	TPLACE = 21,
+	BPLACE = 22,
+	TNAMES = 25,
+	BNAMES = 26,
+	TVALUES = 27,
+	BVALUES = 28,
+	TDOCU = 51,
+	BDOCU = 52
+};
+
+// basic dimensions
+real GRID = 2.54;
+real STRIP_WIDTH = 1.6;
+real HOLE_DIA = 0.8;
+int H_MIL = (GRID * 320000);
+int TOL = H_MIL / 8;
+real MAGNIFY = 2;
+
+// colors
+string WIRE_COLOR = "maroon";
+string PAD_COLOR = "darkcyan";
+string VIA_COLOR = "magenta";
+string STRIP_COLOR = "gold";
+string COMP_COLOR = "black";
+real STRIP_OPACITY_BOTTOM = 0.6;
+real STRIP_OPACITY_TOP = 0.5;
+
+// misc
+int SHOW_VIAS = 1;
+int SHOW_NORMAL = 2;
+int FORCE_NORMAL = 4;
+int SHOW_TOP = 8;
+int SHOW_BOTTOM = 16;
+int SHOW_SPECIAL = SHOW_VIAS | SHOW_TOP | SHOW_BOTTOM;
+
+enum {GENERATE = 1, GENERATE_CLOSE};
+enum {V_NAME, V_BOTTOM, V_CUTS, V_WIRES, V_TCOMP, V_BCOMP, V_TNAMES, V_TVALUES, V_BNAMES, V_BVALUES, V_TGRAPH, V_BGRAPH, V_TTEXT, V_BTEXT, V_LAST};
+
+string MARKER = "$STRIPBOARD";
+string methods[] = {"Cuts between holes", "Cuts on holes"};
+string layerNames[] = {
+	"", "",
+	"Cuts",
+	"Wires",
+	"Top components outlines",
+	"Bottom components outlines",
+	"Top components names",
+	"Top components values",
+	"Bottom components names",
+	"Bottom components values",
+	"Top board graphics",
+	"Bottom board graphics",
+	"Top board text",
+	"Bottom board text"
+};
+
+

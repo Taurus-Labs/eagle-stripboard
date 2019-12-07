@@ -1,0 +1,55 @@
+#include "constants.ulp"
+
+int serial = 0;
+
+// is silkscreen
+int iss(int layer) {
+	return layer == TPLACE || layer == BPLACE || layer == TNAMES || layer == BNAMES || layer == TVALUES || layer == BVALUES || layer == TDOCU || layer == BDOCU;
+}
+
+// is top silkscreen
+int itss(int layer) {
+	return layer == TPLACE || layer == TNAMES || layer == TVALUES || layer == TDOCU;
+}
+
+// is bottom silkscreen
+int ibss(int layer) {
+	return layer == BPLACE || layer == BNAMES || layer == BVALUES || layer == BDOCU;
+}
+
+int itbss(int layer, int bottom) {
+	if (bottom) return ibss(layer);
+	return itss(layer);
+}
+
+
+int rowNum(int x) {
+	return round(real(x) / H_MIL);
+}
+
+real u2(int u) {
+	board(B) {
+		switch (B.grid.unit) {
+			case GRID_UNIT_MIC:
+				return u2mic(u);
+			case GRID_UNIT_MIL:
+				return u2mil(u);
+			case GRID_UNIT_MM:
+				return u2mm(u);
+			case GRID_UNIT_INCH:
+				return u2inch(u);
+		}
+	}
+	return real(u);
+}
+
+int isMarker(string name) {
+	return strstr(name, MARKER) == 0;
+}
+
+string dummyNet() {
+	string name;
+	sprintf(name, "**********-%d", serial++);
+	return name;
+}
+

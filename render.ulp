@@ -1,0 +1,355 @@
+#include "constants.ulp"
+#include "globals.ulp"
+
+string renderCuts() {
+	string xml;
+	string rect;
+	int i, y, j;
+	real x;
+	real cutWidth = onHoles ? STRIP_WIDTH : 1.0;
+
+
+	// go through each strip
+	for (y = 0; y <= holesY; y++) {
+		string parts[];
+		strsplit(parts, holeNets[y], '|');
+		string currentNetName = parts[0];
+		if (currentNetName == "") continue; // no nets on this strip
+		int currentNetEnd = -1;
+		int nextNetStart;
+		for (i = 0; i < holesX; i++) {
+			if (parts[i] != currentNetName) {
+				currentNetEnd = i - 1;
+				break;
+			}
+		}
+		if (currentNetEnd < 0) continue;
+		do {
+			nextNetStart = -1;
+			for (i = currentNetEnd + 1; i < holesX; i++) {
+				if (parts[i] != "") {
+					nextNetStart = i;
+					break;
+				}
+			}
+			if (nextNetStart < 0) break;
+	
+			x = int((currentNetEnd + nextNetStart) / 2);
+			if (onHoles) {
+				if (nextNetStart - currentNetEnd < 2) {
+					string msg;
+					sprintf(
+						msg,
+						"Unable to make a cut between %f and %f (Y=%f)",
+						u2( (X1 + currentNetEnd) * H_MIL),
+						u2( (X1 + nextNetStart) * H_MIL),
+						u2((y + Y1) * H_MIL)
+					);
+					dlgMessageBox(msg, "Finish");
+					return "-1";
+				}
+			} else {
+				x += 0.5;
+			}
+			sprintf(
+				rect, 
+				"<rect x=\"%f\" y=\"%f\" width=\"%f\" height=\"%f\"  fill=\"red\" />\n",
+				x * GRID - cutWidth / 2, real(y) * GRID - STRIP_WIDTH / 2, cutWidth, STRIP_WIDTH
+			);
+			xml += rect;
+
+
+			currentNetName = parts[nextNetStart];
+			currentNetEnd = -1;
+			for (i = nextNetStart + 1; i < holesX; i++) {
+				if (parts[i] != currentNetName) {
+					currentNetEnd = i - 1;
+					break;
+				}
+			}
+		} while (currentNetEnd >= 0);
+	}
+
+	return xml;
+}
+
+string renderStrips() {
+	string xml;
+	string rect;
+	int i, y;
+	for (i = Y1; i <= Y2; i++) {
+		y = i - Y1;
+		sprintf(
+			rect, 
+			"<rect x=\"%f\" y=\"%f\" width=\"%f\" height=\"%f\" rx=\"0.25\" fill=\"%s\" />\n",
+			-STRIP_WIDTH / 2, real(y) * GRID - STRIP_WIDTH / 2, real(X2 - X1) * GRID + STRIP_WIDTH, STRIP_WIDTH,
+			STRIP_COLOR
+		);
+		xml += rect;
+	}
+	return xml;
+}
+
+string renderHoles(int include, int highlight) {
+	string xml;
+	string hole;
+	int i, y, j, x;
+	for (i = Y1; i <= Y2; i++) {
+		y = i - Y1;
+		for (j = X1; j <= X2; j++) {
+			string viaPos;
+			sprintf(viaPos, "%d %d", j, i);
+			string color = "blue";
+			if (lookup(toppads, viaPos, 0)) {
+				if (!(include & SHOW_TOP)) continue;
+				if (highlight & SHOW_TOP) color = PAD_COLOR;
+			} else if (lookup(botpads, viaPos, 0)) {
+				if (!(include & SHOW_BOTTOM)) continue;
+				if (highlight & SHOW_BOTTOM) color = PAD_COLOR;
+			} else if (lookup(vias, viaPos, 0)) {
+				if (!(include & SHOW_VIAS)) continue;
+				if (highlight & SHOW_VIAS) color = VIA_COLOR;
+			} else {
+				if (!(include & SHOW_NORMAL)) continue;
+			}
+			x = j - X1;
+			sprintf(
+				hole, 
+				"<circle cx=\"%f\" cy=\"%f\" r=\"%f\" fill=\"%s\" />\n",
+				real(x) * GRID, real(y) * GRID,
+				HOLE_DIA / 2,
+				color
+			);
+			xml += hole;
+		}
+	}
+	return xml;
+}
+
+string renderBorder() {
+	return "";
+	string xml;
+	sprintf(xml, 
+		"<rect x=\"%f\" y=\"%f\" width=\"%f\" height=\"%f\" fill=\"none\" stroke=\"black\" stroke-width=\"0.3\"/>\n",
+		-GRID * 2, -GRID * 2, GRID * (holesX + 3), GRID * (holesY + 3)
+	);
+	return xml;
+}
+
+string renderCircle(UL_CIRCLE C) {
+	string xml, none;
+	if (C.width == 0) {
+		none = "stroke=\"none\"";
+	} else {
+		none = "fill=\"none\"";
+	}
+	sprintf(
+		xml, 
+		"<circle cx=\"%f\" cy=\"%f\" r=\"%f\" %s stroke-width=\"%f\" />\n",
+		u2mm(C.x) - X1 * GRID, u2mm(C.y) - Y1 * GRID, u2mm(C.radius),
+		none,
+		u2mm(C.width)
+	);
+	return xml;
+}
+
+string renderRect(UL_RECTANGLE R) {
+	string xml;
+	sprintf(
+		xml, 
+		"<g transform=\"rotate(%f,%f,%f)\" >\n" +
+		"<rect x=\"%f\" y=\"%f\" width=\"%f\" height=\"%f\" stroke=\"none\" />\n"
+		+ "</g>",
+		R.angle,
+		(u2mm(R.x1) + u2mm(R.x2)) /2 - X1 * GRID,
+		(u2mm(R.y1) + u2mm(R.y2)) /2 - Y1 * GRID,
+		u2mm(R.x1) - X1 * GRID,
+		u2mm(R.y1) - Y1 * GRID,
+		u2mm(R.x2) - u2mm(R.x1),
+		u2mm(R.y2) - u2mm(R.y1)
+	);
+	return xml;
+}
+
+string renderArc(UL_ARC A) {
+	string xml;
+	sprintf(xml,
+		"<path d=\"M %f,%f A %f %f 0 0 1 %f,%f\" fill=\"none\" stroke-linecap=\"round\" stroke-width=\"%f\" />\n",
+		u2mm(A.x1) - X1 * GRID,
+		u2mm(A.y1) - Y1 * GRID,
+
+		u2mm(A.radius),
+		u2mm(A.radius),
+
+		u2mm(A.x2) - X1 * GRID,
+		u2mm(A.y2) - Y1 * GRID,
+
+		u2mm(A.width)
+	);
+	return xml;
+}
+
+string renderWire(UL_WIRE W, real width) {
+	if (W.arc) {
+		return renderArc(W.arc);
+	}
+	string xml;
+	sprintf(xml,
+		"<path d=\"M %f,%f L %f,%f\" fill=\"none\" stroke-linecap=\"round\" stroke-width=\"%f\" />\n",
+		u2mm(W.x1) - X1 * GRID,
+		u2mm(W.y1) - Y1 * GRID,
+		u2mm(W.x2) - X1 * GRID,
+		u2mm(W.y2) - Y1 * GRID,
+		width
+	);
+	return xml;
+}
+
+string renderTopTraces() {
+	string xml;
+	board(B) {
+		B.signals(S) {
+			S.wires(W) {
+				if (W.layer != TOP) {
+					continue;
+				}
+				xml += renderWire(W, 0.3);
+			}
+		}
+	}
+	return xml;
+}
+
+string renderTexts(int bottom) {
+	string xml;
+	board(B) {
+		B.texts(T) {
+			if (itbss(T.layer, bottom)) {
+				T.wires(W) {
+					xml += renderWire(W, u2mm(W.width));
+				}
+			}
+		}
+	}
+	return xml;
+}
+
+string renderGraphics(int bottom) {
+	string xml;
+	board(B) {
+		B.circles(C) {
+			if (itbss(C.layer, bottom)) {
+				xml += renderCircle(C);
+			}
+		}
+		B.wires(W) {
+			if (itbss(W.layer, bottom)) {
+				xml += renderWire(W, u2mm(W.width));
+			}
+		}
+		B.rectangles(R) {
+			if (itbss(R.layer, bottom)) {
+				xml += renderRect(R);
+			}
+		}
+	}
+	return xml;
+}
+
+string renderFootprints(int bottom) {
+	string xml;
+	board(B) {
+		B.elements(E) {
+			if (E.mirror ^ bottom) continue;
+			E.package.wires(W) {
+				if (iss(W.layer)) {
+					xml += renderWire(W, u2mm(W.width));
+				}
+			}
+			E.package.circles(C) {
+				if (iss(C.layer)) {
+					xml += renderCircle(C);
+				}
+			}
+			E.package.rectangles(R) {
+				if (iss(R.layer)) {
+					xml += renderRect(R);
+				}
+			}
+		}
+	}
+	return xml;
+}
+
+string renderFootprintTexts(int layer) {
+	output("/tmp/debug.txt", "w") {
+		printf("TEXT: %d", layer);
+	}
+	string xml;
+	board(B) {
+		B.elements(E) {
+			E.package.texts(T) {
+				if (T.layer == layer) {
+					T.wires(W) {
+						xml += renderWire(W, u2mm(W.width));
+					}
+				}
+			}
+			E.texts(T) {
+				if (T.layer == layer) {
+					T.wires(W) {
+						xml += renderWire(W, u2mm(W.width));
+					}
+				}
+			}
+		}
+	}
+	return xml;
+}
+
+string renderIndex(int reverse) {
+	string xml;
+	int i, j;
+	real x, y;
+	string text;
+	for (j = 0; j < holesY; j++) {
+		y = real(-j) * GRID;
+		x = - GRID;
+		if (reverse) x = GRID;
+		sprintf(
+			text,
+			"<text x=\"%f\" y=\"%f\" font-size=\"1.8\" font-weight=\"bold\" text-anchor=\"middle\" alignment-baseline=\"middle\">%d</text>\n",
+			x, y, j + 1
+		);
+		xml += text;
+		x = GRID * holesX;
+		if (reverse) x = - GRID * holesX;
+		sprintf(
+			text,
+			"<text x=\"%f\" y=\"%f\" font-size=\"1.8\" font-weight=\"bold\" text-anchor=\"middle\" alignment-baseline=\"middle\">%d</text>\n",
+			x, y, j + 1
+		);
+		xml += text;
+	}
+	for (j = 0; j < holesX; j++) {
+		x = real(j) * GRID;
+		if (reverse) x = -x;
+		y = GRID;
+		sprintf(
+			text,
+			"<text x=\"%f\" y=\"%f\" font-size=\"1.8\" font-weight=\"bold\" text-anchor=\"middle\" alignment-baseline=\"middle\">%d</text>\n",
+			x, y, j + 1
+		);
+		xml += text;
+		y = - GRID * holesY;
+		sprintf(
+			text,
+			"<text x=\"%f\" y=\"%f\" font-size=\"1.8\" font-weight=\"bold\" text-anchor=\"middle\" alignment-baseline=\"middle\">%d</text>\n",
+			x, y, j + 1
+		);
+		xml += text;
+	}
+	return xml;
+}
+
+

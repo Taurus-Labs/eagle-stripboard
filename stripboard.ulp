@@ -1,0 +1,467 @@
+string VERSION = "1.0.0";
+
+#include "constants.ulp"
+#include "globals.ulp"
+#include "utility.ulp"
+#include "render.ulp"
+#include "dialogs.ulp"
+
+void markHoleNet(int y, int x, string name) {
+	string parts[];
+	strsplit(parts, holeNets[y], '|');
+	parts[x] = name;
+	holeNets[y] = strjoin(parts, '|');
+}
+
+void markHoleNetRange(int y, int x1, int x2, string name) {
+	string parts[];
+	strsplit(parts, holeNets[y], '|');
+	for (int i = x1; i <= x2; i++) {
+		parts[i] = name;
+	}
+	holeNets[y] = strjoin(parts, '|');
+}
+
+void reportInvalidWire(UL_WIRE W) {
+	setgroup(W);
+	string msg;
+	sprintf(msg, "Invalid wire segment on bottom layer from (%f, %f) to (%f, %f)", u2(W.x1), u2(W.y1), u2(W.x2), u2(W.y2));
+	dlgMessageBox(msg, "Finish");
+}
+
+void reportInvalidVia(UL_VIA V) {
+	string msg;
+	sprintf(msg, "Via at (%f, %f) is not on 100 mil grid", u2(V.x), u2(V.y));
+	dlgMessageBox(msg, "Finish");
+	
+}
+
+int checkWireCoord(int x) {
+	int delta = abs(x) % H_MIL;
+	if (delta <= TOL || delta > (H_MIL - TOL)) {
+		return 1;
+	}
+	return 0;
+}
+
+int checkWireCoords(UL_WIRE W) {
+	if (!checkWireCoord(W.x1)) return 0;
+	if (!checkWireCoord(W.y1)) return 0;
+	if (!checkWireCoord(W.x2)) return 0;
+	if (!checkWireCoord(W.y2)) return 0;
+	return 1;
+}
+
+int checkViaCoord(UL_VIA V) {
+	if (!checkWireCoord(V.x)) return 0;
+	if (!checkWireCoord(V.y)) return 0;
+	return 1;
+}
+
+int collectHorzSegments() {
+	int i, x, y;
+
+	// first, for each pad and via set signal name
+	board(B) {
+		B.signals(S) {
+			if (isMarker(S.name)) continue;
+			S.vias(V) {
+				x = rowNum(V.x) - X1;
+				y = rowNum(V.y) - Y1;
+				if (x < 0 || y < 0) continue;
+				markHoleNet(y, x, S.name);
+			}
+		}
+		B.elements(E) {
+			E.package.contacts(C) {
+				x = rowNum(C.x) - X1;
+				y = rowNum(C.y) - Y1;
+				if (x < 0 || y < 0) continue;
+				markHoleNet(y, x, C.signal == "" ? dummyNet() : C.signal);
+			}
+		}
+	}
+
+	// next, mark signals from horizontal wires
+	board(B) {
+		B.signals(S) {
+			S.wires(W) {
+				if (W.layer != BOTTOM) {
+					continue;
+				}
+				int valid = 1;
+				if (abs(W.y1 - W.y2) > TOL) valid = 0;
+				if (!checkWireCoords(W)) valid = 0;
+				if (!valid) {
+					reportInvalidWire(W);
+					return 0;
+				}
+				int stripNum = rowNum(W.y1) - Y1;
+				int left, right;
+				if (W.x1 < W.x2) {
+					left = rowNum(W.x1) - X1;
+					right = rowNum(W.x2) - X1;
+				} else {
+					left = rowNum(W.x2) - X1;
+					right = rowNum(W.x1) - X1;
+				}
+				markHoleNetRange(stripNum, left, right, S.name);
+			}
+		}
+	}
+
+	// for each strip, extend first net to the left
+	for (y = 0; y < holesY; y++) {
+		string parts[];
+		strsplit(parts, holeNets[y], '|');
+		string firstNet = "";
+		for (i = 0; i < holesX; i++) {
+			if (parts[i] != "") {
+				firstNet = parts[i];
+				break;
+			}
+		}
+		if (firstNet != "") {
+			for (i = 0; i < holesX; i++) {
+				if (parts[i] == "") parts[i] = firstNet;
+				else break;
+			}
+		}
+		holeNets[y] = strjoin(parts, '|');
+	}
+
+
+	return 1;
+}
+
+void measureBoard() {
+	int first = 1;
+	int x, y;
+	board(B) {
+		bX1 = rowNum(B.area.x1);
+		bX2 = rowNum(B.area.x2);
+		bY1 = rowNum(B.area.y1);
+		bY2 = rowNum(B.area.y2);
+		output("/tmp/debug.txt", "w") {
+			printf("%d %d %d %d", bX1, bY1, bX2, bY2);
+		}
+		B.elements(E) {
+			E.package.contacts(C) {
+				x = rowNum(C.x);
+				y = rowNum(C.y);
+				if (first) {
+					first = 0;
+					X1 = X2 = x;
+					Y1 = Y2 = y;
+				} else {
+					if (X1 > x) X1 = x;
+					if (Y1 > y) Y1 = y;
+					if (X2 < x) X2 = x;
+					if (Y2 < y) Y2 = y;
+				}
+			}
+		}
+		B.signals(S) {
+			S.vias(C) {
+				x = rowNum(C.x);
+				y = rowNum(C.y);
+				if (!isMarker(S.name)) sprintf(vias[numVias++], "%d %d", x, y);
+				if (first) {
+					first = 0;
+					X1 = X2 = x;
+					Y1 = Y2 = y;
+				} else {
+					if (X1 > x) X1 = x;
+					if (Y1 > y) Y1 = y;
+					if (X2 < x) X2 = x;
+					if (Y2 < y) Y2 = y;
+				}
+			}
+		}
+		B.elements(E) {
+			E.package.contacts(C) {
+				x = rowNum(C.x);
+				y = rowNum(C.y);
+				if (E.mirror) {
+					sprintf(botpads[numBotPads++], "%d %d", x, y);
+				} else {
+					sprintf(toppads[numTopPads++], "%d %d", x, y);
+				}
+			}
+		}
+	}
+	holesX = X2 - X1 + 1;
+	holesY = Y2 - Y1 + 1;
+}
+
+void makeDefaultViews() {
+	nViews = 0;
+	string parts[];
+
+	strsplit(parts, "", ';');
+	parts[V_NAME] = "Combined";
+	parts[V_CUTS] = "1";
+	parts[V_WIRES] = "1";
+	parts[V_TCOMP] = "1";
+	parts[V_BCOMP] = "1";
+	views[nViews++] = strjoin(parts, '\t');
+
+	strsplit(parts, "", ';');
+	parts[V_NAME] = "Cuts";
+	parts[V_BOTTOM] = "1";
+	parts[V_CUTS] = "1";
+	views[nViews++] = strjoin(parts, '\t');
+
+	strsplit(parts, "", ';');
+	parts[V_NAME] = "Wires";
+	parts[V_WIRES] = "1";
+	views[nViews++] = strjoin(parts, '\t');
+
+	strsplit(parts, "", ';');
+	parts[V_NAME] = "Top components";
+	parts[V_TCOMP] = "1";
+	parts[V_TVALUES] = "1";
+	views[nViews++] = strjoin(parts, '\t');
+
+	strsplit(parts, "", ';');
+	parts[V_NAME] = "Bottom components";
+	parts[V_BOTTOM] = "1";
+	parts[V_BCOMP] = "1";
+	parts[V_BVALUES] = "1";
+	views[nViews++] = strjoin(parts, '\t');
+
+	strsplit(parts, "", ';');
+	parts[V_NAME] = "Graphics";
+	parts[V_TGRAPH] = "1";
+	parts[V_TTEXT] = "1";
+	views[nViews++] = strjoin(parts, '\t');
+}
+
+string startXML(int x1, int y1, int x2, int y2, int flip) {
+	string xml, line;
+	real w = GRID * (x2 - x1 + 6) * MAGNIFY;
+	real h = GRID * (y2 - y1 + 6) * MAGNIFY;
+	sprintf(line, "<svg width=\"%fmm\" height=\"%fmm\" viewBox=\"0 0 %f %f\" xmlns=\"http://www.w3.org/2000/svg\">\n", w, h, w, h);
+	xml += line;
+	if (flip) {
+		sprintf(line, "<g transform=\"translate(%f %f)\">", w - GRID * ( 3 + X1 - x1) * MAGNIFY, h - GRID * 3  * MAGNIFY);
+	} else {
+		sprintf(line, "<g transform=\"translate(%f %f)\">", GRID * ( 3 + X1 - x1 ) * MAGNIFY, h - GRID * 3  * MAGNIFY);
+	}
+	xml += line;
+	return xml;
+}
+
+string startFlip(int flip) {
+	string xml;
+	if (flip) {
+		sprintf(xml, "<g transform=\"scale(%f %f)\">", -MAGNIFY, -MAGNIFY);
+	} else {
+		sprintf(xml, "<g transform=\"scale(%f %f)\">", MAGNIFY, -MAGNIFY);
+	}
+	return xml;
+}
+
+string settingsFilename() {
+	return EAGLE_HOME + "/stripboard.cfg";
+}
+
+void readSettings() {
+	string matches[];
+	string fileName = settingsFilename();
+	int found = fileglob(matches, fileName);
+	if (found) {
+		nViews = fileread(views, fileName);
+	}
+	onHoles = views[nViews-1] == "1";
+	views[nViews-1] = "";
+	nViews--;
+}
+
+void writeSettings() {
+	string fileName = settingsFilename();
+	output(fileName, "w") {
+		for (int i = 0; i < nViews; i++) {
+			printf("%s\n", views[i]);
+		}
+		printf("%d", onHoles);
+	}
+}
+
+string createFilename(string id) {
+	int len = strlen(id);
+	string cleanId;
+	for (int i = 0; i < len; i++) {
+		char c = id[i];
+		if (
+			(c >= '0' && c <= '9')
+			|| (c >= 'a' && c <= 'z')
+			|| (c >= 'A' && c <= 'Z')
+			|| c == '-'
+		) {
+			cleanId += c;
+		} else {
+			cleanId += '_';
+		}
+	}
+	board(B) {
+		string name = directory;
+		if (strstr(directory, ":") >= 0) {
+			name += "\\";
+		} else {
+			name += "/";
+		}
+		name += filename(B.name);
+		return filesetext(name, "." + cleanId + ".svg");
+	}
+}
+
+real lo(real topOpacity, real bottomOpacity, int bottom) {
+	return bottom ? bottomOpacity : topOpacity;
+}
+
+int generateView(string def) {
+	string parts[];
+	strsplit(parts, def, '\t');
+	string name = createFilename(parts[V_NAME]);
+	real w = GRID * (X2 - X1 + 6) * MAGNIFY;
+	real h = GRID * (Y2 - Y1 + 6) * MAGNIFY;
+	int bottom = (parts[V_BOTTOM] != "");
+	real tO = lo(0.8, 0.3, bottom);
+	real bO = lo(0.3, 0.8, bottom);
+	string cuts = renderCuts();
+	fileerror();
+	output(name, "w") {
+		if (parts[V_TGRAPH] || parts[V_BGRAPH] || parts[V_TTEXT] || parts[V_BTEXT]) {
+			printf("%s", startXML(bX1, bY1, bX2, bY2, bottom));
+		} else {
+			printf("%s", startXML(X1, Y1, X2, Y2, bottom));
+		}
+		if (bottom) {
+			printf("<g transform=\"scale(%f %f)\">", -MAGNIFY, -MAGNIFY);
+		} else {
+			printf("<g transform=\"scale(%f %f)\">", MAGNIFY, -MAGNIFY);
+		}
+		printf("%s", renderBorder());
+		printf("<g opacity=\"%f\">%s</g>", bottom ? STRIP_OPACITY_BOTTOM : STRIP_OPACITY_TOP, renderStrips());
+		printf("<g opacity=\"0.2\">%s</g>", renderHoles(SHOW_NORMAL, 0));
+
+		if (!parts[V_WIRES]) {
+			printf("<g opacity=\"0.2\">%s</g>", renderHoles(SHOW_VIAS, 0));
+		} else {
+			printf("<g opacity=\"%f\">%s</g>", tO, renderHoles(SHOW_VIAS, SHOW_VIAS));
+		}
+		if (!parts[V_TCOMP] && !parts[V_BCOMP]) {
+			printf("<g opacity=\"0.2\">%s</g>", renderHoles(SHOW_TOP | SHOW_BOTTOM, 0));
+		} else if (!parts[V_TCOMP]) {
+			printf("<g opacity=\"0.2\">%s</g>", renderHoles(SHOW_TOP, 0));
+			printf("<g opacity=\"%f\">%s</g>", bO, renderHoles(SHOW_BOTTOM, SHOW_BOTTOM));
+		} else if (!parts[V_BCOMP]) {
+			printf("<g opacity=\"0.2\">%s</g>", renderHoles(SHOW_BOTTOM, 0));
+			printf("<g opacity=\"%f\">%s</g>", tO, renderHoles(SHOW_TOP, SHOW_TOP));
+		} else {
+			printf("<g opacity=\"%f\">%s</g>", tO, renderHoles(SHOW_TOP, SHOW_TOP));
+			printf("<g opacity=\"%f\">%s</g>", bO, renderHoles(SHOW_BOTTOM, SHOW_BOTTOM));
+		}
+		
+		if (parts[V_TCOMP]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\" fill=\"%s\">%s</g>",  tO,  COMP_COLOR, COMP_COLOR, renderFootprints(0));
+		}
+		if (parts[V_BCOMP]) {		
+			printf("<g opacity=\"%f\" stroke=\"%s\" fill=\"%s\">%s</g>",  bO,  COMP_COLOR, COMP_COLOR, renderFootprints(1));
+		}
+
+		if (parts[V_TNAMES]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\" fill=\"%s\">%s</g>",  tO,  COMP_COLOR, COMP_COLOR, renderFootprintTexts(TNAMES));
+		}
+		if (parts[V_TVALUES]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\" fill=\"%s\">%s</g>",  tO,  COMP_COLOR, COMP_COLOR, renderFootprintTexts(TVALUES));
+		}
+		if (parts[V_BNAMES]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\" fill=\"%s\">%s</g>",  bO,  COMP_COLOR, COMP_COLOR, renderFootprintTexts(BNAMES));
+		}
+		if (parts[V_BVALUES]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\" fill=\"%s\">%s</g>",  bO,  COMP_COLOR, COMP_COLOR, renderFootprintTexts(BVALUES));
+		}
+
+		if (parts[V_WIRES]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\">%s</g>", tO, WIRE_COLOR,  renderTopTraces());
+		}
+
+		if (parts[V_TGRAPH]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\">%s</g>", tO, COMP_COLOR,  renderGraphics(0));
+		}
+		if (parts[V_BGRAPH]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\">%s</g>", bO, COMP_COLOR,  renderGraphics(1));
+		}
+
+		if (parts[V_TTEXT]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\">%s</g>", tO, COMP_COLOR,  renderTexts(0));
+		}
+		if (parts[V_BTEXT]) {
+			printf("<g opacity=\"%f\" stroke=\"%s\">%s</g>", bO, COMP_COLOR,  renderTexts(1));
+		}
+		if (parts[V_CUTS]) {
+			printf("<g opacity=\"%f\">%s</g>", 0.6, cuts);
+		}
+
+		printf("</g>");
+
+		printf("<g transform=\"scale(%f %f)\">", MAGNIFY, MAGNIFY);
+		printf("%s", renderIndex(bottom));
+		printf("</g>");
+
+		printf("</g>");
+		printf("</svg>");
+	}
+	return fileerror();
+}
+int main() {
+	if (board) {
+
+		makeDefaultViews();
+		readSettings();
+
+		board(B) {
+			directory = filedir(B.name);
+		}
+
+		measureBoard();
+		if (!collectHorzSegments()) {
+			exit(1);
+		}
+		
+		string strips = renderStrips();
+
+		int result = GENERATE;	
+		
+		while(result == GENERATE) {
+			result = mainWindow();
+			if (result <= 0) {
+				break;
+			}
+
+			real w = GRID * (X2 - X1 + 6) * MAGNIFY;
+			real h = GRID * (Y2 - Y1 + 6) * MAGNIFY;
+
+			string cuts = renderCuts();
+			if (cuts == "-1") {
+				result = GENERATE;
+				continue;
+			}
+
+			for (int i = 0; i < nViews; i++) {
+				string def = views[i];
+				if (generateView(def)) {
+					result = GENERATE;
+					break;
+				}
+			}
+			writeSettings();
+		}
+	} else {
+		dlgMessageBox(":This ULP can be run on board only!", "Finish");
+		return -1;
+	}
+	return 0;
+}
